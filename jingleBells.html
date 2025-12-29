@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jingle Bells - Input Kontrolü</title>
+    <link rel="stylesheet" href="jng.css">
+</head>
+<body>
+    <main>
+        <h1>Yazı Kutusu ve Doğrulama</h1>
+        <label for="textInput">Bir şey yazın:</label>
+        <input id="textInput" type="text" placeholder="Buraya yazın...">
+        <!-- Atama sonucu burada gösterilecek (inputun hemen altında) -->
+        <div id="result" class="result" aria-live="polite"></div>
+        <button id="checkBtn">Kontrol Et</button>
+        <!-- Reset butonu kaldırıldı; kullanıcı 'sıfırla' yazarsa eski çekiliş silinip yeni çekiliş oluşturulup kaydedilecek -->
+        <small style="display:block; margin-top:8px; color:#666;">Not: Eski çekiliş silinir ve yeni bir çekiliş oluşturulur; inputa <strong>sıfırla</strong> yazıp Kontrol Et'e basın. (Katılımcılar: ibo, adnan, ahmet)</small>
+        <div id="message" class="message" aria-live="polite"></div>
+    </main>
+
+    <script src="index.js"></script>
+</body>
+</html>
