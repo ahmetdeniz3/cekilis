@@ -5,6 +5,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	const result = document.getElementById('result');
 
 	const STORAGE_KEY = 'jb_assignments';
+	// API base can be configured from the page (e.g. set window.API_BASE = 'https://abcd-1234.ngrok.io')
+	const API_BASE = window.API_BASE || '';
+	const serverInfoEl = document.getElementById('serverInfo');
 
 	function saveAssignments(assign) {
 		localStorage.setItem(STORAGE_KEY, JSON.stringify(assign));
@@ -95,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
 		return null;
 	}
 
-	function checkInput() {
+	async function checkInput() {
 		const res = validate(input.value);
 		if (!res.ok) {
 			showMessage(res.message, 'error');
@@ -103,8 +106,23 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 
 		const val = input.value.trim().toLowerCase();
-		// 'sıfırla' yazılırsa eski çekilişi sil, yeni çekiliş oluşturup öncekiyle farklı olana kadar yeniden dene
+		// 'sıfırla' yazılırsa önce sunucuya reset isteği gönder, başarısızsa lokal fallback
 		if (val === 'sıfırla') {
+			try {
+				const resp = await fetch(API_BASE + '/api/assignments/reset', { method: 'POST' });
+				if (resp.ok) {
+					const data = await resp.json();
+					saveAssignments(data.assignments);
+					displayAssignments(data.assignments, false);
+					if (result) { result.textContent = ''; result.className = 'result'; }
+					input.value = '';
+					showMessage(data.message || 'Eski çekiliş silindi. Yeni çekiliş yapıldı ve kaydedildi.', 'success');
+					return true;
+				}
+			} catch (err) {
+				// sunucuya ulaşılamadı; devam et ve lokal olarak sıfırla
+			}
+
 			const prev = loadAssignments();
 			clearAssignments();
 			let assign = null;
@@ -135,19 +153,20 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 
 		if (participants.includes(val)) {
-			let assign = loadAssignments();
-			let persisted = true;
+			let assign = (typeof currentAssign !== 'undefined' && currentAssign) ? currentAssign : loadAssignments();
 			if (!assign) {
-				assign = derangement(participants);
-				persisted = false;
-				if (!assign) {
-					showMessage('Atama yapılamadı, tekrar deneyin.', 'error');
-					return false;
+				const serverAssign = await fetchAssignmentsFromServer();
+				if (serverAssign) {
+					assign = serverAssign;
+					currentAssign = assign;
+					showSingleAssignment(val, assign, true);
+					return true;
 				}
-				saveAssignments(assign);
+				showMessage("Kayıtlı çekiliş yok. Yeni çekiliş oluşturmak için inputa 'sıfırla' yazıp Kontrol Et'e basın.", 'error');
+				return false;
 			}
-			showSingleAssignment(val, assign, persisted);
-			if (!persisted) showMessage('Çekiliş yapıldı ve kaydedildi.', 'success');
+			currentAssign = assign;
+			showSingleAssignment(val, assign, true);
 			return true;
 		}
 
@@ -155,11 +174,62 @@ document.addEventListener('DOMContentLoaded', () => {
 		return true;
 	}
 
-	// yüklenmiş çekiliş varsa uyarı göster (kullanıcı ismini girip kimin çıktığını görebilir)
-	const saved = loadAssignments();
-	if (saved) {
-		showMessage('Kayıtlı çekiliş bulundu. İsim girip kimin çıktığını görebilirsiniz.', 'success');
+	// sunucuya bağlanarak paylaşılan çekilişi getir (başarısız olursa localStorage'a geri dön)
+	let currentAssign = null;
+
+	async function fetchAssignmentsFromServer() {
+		try {
+			console.debug('[client] GET /api/assignments (no create) at', API_BASE + '/api/assignments');
+			const resp = await fetch(API_BASE + '/api/assignments');
+			if (resp.status === 204) {
+				console.debug('[client] server has no assignments (server empty)');
+				if (serverInfoEl) serverInfoEl.textContent = 'Sunucu: ' + (API_BASE || location.origin) + ' (boş)';
+				const local = loadAssignments();
+				if (local && importBtn) {
+					importBtn.style.display = 'inline-block';
+				} else if (importBtn) {
+					importBtn.style.display = 'none';
+				}
+				showMessage("Sunucu çekilişi yok. Sunucuya yüklemek için 'Import' butonunu kullanın veya yeni çekiliş oluşturmak için inputa 'sıfırla' yazın.", 'error');
+				return null;
+			}
+
+			if (!resp.ok) {
+				console.warn('[client] fetch returned non-ok', resp.status);
+				if (serverInfoEl) serverInfoEl.textContent = 'Sunucu: hata (' + resp.status + ')';
+				return null;
+			}
+			const data = await resp.json();
+			console.debug('[client] got assignments from server', data);
+			if (data && data.assignments) {
+				currentAssign = data.assignments;
+				saveAssignments(currentAssign); // cache locally as a fallback
+				if (serverInfoEl) serverInfoEl.textContent = 'Sunucu: ' + (API_BASE || location.origin) + ' (OK, last sync: ' + new Date().toLocaleTimeString() + ')';
+				if (importBtn) importBtn.style.display = 'none';
+				return currentAssign;
+			}
+			return null;
+		} catch (e) {
+			console.error('[client] fetch error', e);
+			if (serverInfoEl) serverInfoEl.textContent = 'Sunucu: (erişilemedi)';
+			return null;
+		}
 	}
+
+	(async () => {
+		const serverAssign = await fetchAssignmentsFromServer();
+		if (serverAssign) {
+			displayAssignments(serverAssign, true);
+			showMessage('Kayıtlı çekiliş yüklendi (sunucu).', 'success');
+		} else {
+			const saved = loadAssignments();
+			if (saved) {
+				currentAssign = saved;
+				displayAssignments(saved, true);
+				showMessage('Kayıtlı çekiliş bulundu. İsim girip kimin çıktığını görebilirsiniz.', 'success');
+			}
+		}
+	})();
 
 	btn.addEventListener('click', checkInput);
 
